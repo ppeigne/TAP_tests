@@ -8,8 +8,13 @@ from typing import Dict, List
 import google.generativeai as genai
 import urllib3
 from copy import deepcopy
-from openai import OpenAI
-import replicate
+
+# Handle different OpenAI package versions
+try:
+    from openai import OpenAI  # New version
+    USE_LEGACY_OPENAI = False
+except ImportError:
+    USE_LEGACY_OPENAI = True  # Fall back to legacy version
 
 from config import LLAMA_API_LINK, VICUNA_API_LINK
 
@@ -208,7 +213,12 @@ class GPT(LanguageModel):
     API_MAX_RETRY = 20
     API_TIMEOUT = 20
     
-    openai.api_key = os.getenv("OPENAI_API_KEY")
+    def __init__(self, model_name):
+        self.model_name = model_name
+        if not USE_LEGACY_OPENAI:
+            self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
+        else:
+            openai.api_key = os.getenv("OPENAI_API_KEY")
 
     def generate(self, conv: List[Dict], 
                 max_n_tokens: int, 
@@ -225,24 +235,36 @@ class GPT(LanguageModel):
         '''
         output = self.API_ERROR_OUTPUT
         for _ in range(self.API_MAX_RETRY):
-            try: 
-                
-                response = openai.ChatCompletion.create(
-                            model = self.model_name,
-                            messages = conv,
-                            max_tokens = max_n_tokens,
-                            temperature = temperature,
-                            top_p = top_p,
-                            request_timeout = self.API_TIMEOUT,
-                            )
-                output = response["choices"][0]["message"]["content"]
+            try:
+                if not USE_LEGACY_OPENAI:
+                    # New OpenAI client version
+                    response = self.client.chat.completions.create(
+                        model=self.model_name,
+                        messages=conv,
+                        max_tokens=max_n_tokens,
+                        temperature=temperature,
+                        top_p=top_p,
+                        timeout=self.API_TIMEOUT,
+                    )
+                    output = response.choices[0].message.content
+                else:
+                    # Legacy OpenAI version
+                    response = openai.ChatCompletion.create(
+                        model=self.model_name,
+                        messages=conv,
+                        max_tokens=max_n_tokens,
+                        temperature=temperature,
+                        top_p=top_p,
+                        request_timeout=self.API_TIMEOUT,
+                    )
+                    output = response["choices"][0]["message"]["content"]
                 break
-            except Exception as e: 
+            except Exception as e:
                 print(type(e), e)
                 time.sleep(self.API_RETRY_SLEEP)
-        
+            
             time.sleep(self.API_QUERY_SLEEP)
-        return output 
+        return output
     
     def batched_generate(self, 
                         convs_list: List[List[Dict]],
@@ -378,39 +400,51 @@ class OpenRouter(GPT):
     def __init__(self, model_name):
         self.model_name = model_name
         # Initialize OpenAI client with OpenRouter configuration
-        self.client = OpenAI(
-            base_url="https://openrouter.ai/api/v1",
-            api_key=os.getenv("OPENROUTER_API_KEY"),
-        )
+        if not USE_LEGACY_OPENAI:
+            self.client = OpenAI(
+                base_url="https://openrouter.ai/api/v1",
+                api_key=os.getenv("OPENROUTER_API_KEY"),
+            )
+        else:
+            # For legacy OpenAI version, set the base URL and API key differently
+            openai.api_base = "https://openrouter.ai/api/v1"
+            openai.api_key = os.getenv("OPENROUTER_API_KEY")
 
     def generate(self, conv: List[Dict],
                 max_n_tokens: int,
                 temperature: float, 
                 top_p: float):
-        '''
-        Args:
-            conv: List of dictionaries, OpenAI API format
-            max_n_tokens: int, max number of tokens to generate
-            temperature: float, temperature for sampling
-            top_p: float, top p for sampling
-        Returns:
-            str: generated response
-        '''
         output = self.API_ERROR_OUTPUT
         for _ in range(self.API_MAX_RETRY):
             try:
-                completion = self.client.chat.completions.create(
-                    model=self.model_name,
-                    messages=conv,
-                    max_tokens=max_n_tokens,
-                    temperature=temperature,
-                    top_p=top_p,
-                    extra_headers={
-                        "HTTP-Referer": "https://github.com/yourusername/yourrepo", # Replace with your site
-                        "X-Title": "TAP Research", # Replace with your site name
-                    }
-                )
-                output = completion.choices[0].message.content
+                if not USE_LEGACY_OPENAI:
+                    # New OpenAI client version
+                    completion = self.client.chat.completions.create(
+                        model=self.model_name,
+                        messages=conv,
+                        max_tokens=max_n_tokens,
+                        temperature=temperature,
+                        top_p=top_p,
+                        extra_headers={
+                            "HTTP-Referer": "https://github.com/yourusername/yourrepo",
+                            "X-Title": "TAP Research",
+                        }
+                    )
+                    output = completion.choices[0].message.content
+                else:
+                    # Legacy OpenAI version
+                    completion = openai.ChatCompletion.create(
+                        model=self.model_name,
+                        messages=conv,
+                        max_tokens=max_n_tokens,
+                        temperature=temperature,
+                        top_p=top_p,
+                        headers={
+                            "HTTP-Referer": "https://github.com/yourusername/yourrepo",
+                            "X-Title": "TAP Research",
+                        }
+                    )
+                    output = completion["choices"][0]["message"]["content"]
                 break
             except Exception as e:
                 print(type(e), e)
