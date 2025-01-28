@@ -9,6 +9,7 @@ import google.generativeai as genai
 import urllib3
 from copy import deepcopy
 from openai import OpenAI
+import replicate
 
 from config import LLAMA_API_LINK, VICUNA_API_LINK
 
@@ -424,3 +425,57 @@ class OpenRouter(GPT):
                         temperature: float,
                         top_p: float = 1.0,):
         return [self.generate(conv, max_n_tokens, temperature, top_p) for conv in convs_list]
+
+class ReplicateModel(LanguageModel):
+    """Class for interacting with models hosted on Replicate"""
+    
+    API_RETRY_SLEEP = 10
+    API_ERROR_OUTPUT = "$ERROR$"
+    API_QUERY_SLEEP = 0.5
+    API_MAX_RETRY = 20
+    
+    def __init__(self, model_name):
+        self.model_name = model_name
+        self.client = replicate.Client(api_token=os.getenv("REPLICATE_API_TOKEN"))
+
+    def generate(self, prompt: str,
+                max_n_tokens: int,
+                temperature: float,
+                top_p: float):
+        """
+        Generate text using Replicate API
+        """
+        output = self.API_ERROR_OUTPUT
+        
+        for _ in range(self.API_MAX_RETRY):
+            try:
+                # Run the model
+                output = self.client.run(
+                    self.model_name,
+                    input={
+                        "prompt": prompt,
+                        "max_new_tokens": max_n_tokens,
+                        "temperature": temperature,
+                        "top_p": top_p,
+                    }
+                )
+                
+                # Replicate returns an iterator, get the actual output
+                output = "".join(output)
+                break
+                
+            except Exception as e:
+                print('Replicate API exception:', type(e), e)
+                time.sleep(self.API_RETRY_SLEEP)
+            
+            time.sleep(self.API_QUERY_SLEEP)
+            
+        return output
+
+    def batched_generate(self,
+                        prompts_list: List[str],
+                        max_n_tokens: int,
+                        temperature: float,
+                        top_p: float = 1.0):
+        return [self.generate(prompt, max_n_tokens, temperature, top_p) 
+                for prompt in prompts_list]
