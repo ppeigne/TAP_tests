@@ -8,6 +8,7 @@ from typing import Dict, List
 import google.generativeai as genai
 import urllib3
 from copy import deepcopy
+from openai import OpenAI
 
 from config import LLAMA_API_LINK, VICUNA_API_LINK
 
@@ -360,6 +361,60 @@ class GeminiPro():
             time.sleep(self.API_QUERY_SLEEP)
         return output
     
+    def batched_generate(self, 
+                        convs_list: List[List[Dict]],
+                        max_n_tokens: int, 
+                        temperature: float,
+                        top_p: float = 1.0,):
+        return [self.generate(conv, max_n_tokens, temperature, top_p) for conv in convs_list]
+
+class OpenRouter(GPT):
+    """OpenRouter API class that follows OpenAI's API format"""
+    
+    def __init__(self, model_name):
+        self.model_name = model_name
+        # Initialize OpenAI client with OpenRouter configuration
+        self.client = OpenAI(
+            base_url="https://openrouter.ai/api/v1",
+            api_key=os.getenv("OPENROUTER_API_KEY"),
+        )
+
+    def generate(self, conv: List[Dict],
+                max_n_tokens: int,
+                temperature: float, 
+                top_p: float):
+        '''
+        Args:
+            conv: List of dictionaries, OpenAI API format
+            max_n_tokens: int, max number of tokens to generate
+            temperature: float, temperature for sampling
+            top_p: float, top p for sampling
+        Returns:
+            str: generated response
+        '''
+        output = self.API_ERROR_OUTPUT
+        for _ in range(self.API_MAX_RETRY):
+            try:
+                completion = self.client.chat.completions.create(
+                    model=self.model_name,
+                    messages=conv,
+                    max_tokens=max_n_tokens,
+                    temperature=temperature,
+                    top_p=top_p,
+                    extra_headers={
+                        "HTTP-Referer": "https://github.com/yourusername/yourrepo", # Replace with your site
+                        "X-Title": "TAP Research", # Replace with your site name
+                    }
+                )
+                output = completion.choices[0].message.content
+                break
+            except Exception as e:
+                print(type(e), e)
+                time.sleep(self.API_RETRY_SLEEP)
+            
+            time.sleep(self.API_QUERY_SLEEP)
+        return output
+
     def batched_generate(self, 
                         convs_list: List[List[Dict]],
                         max_n_tokens: int, 

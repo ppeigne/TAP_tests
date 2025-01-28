@@ -1,6 +1,5 @@
-
 import common
-from language_models import GPT, PaLM, HuggingFace, APIModelLlama7B, APIModelVicuna13B, GeminiPro
+from language_models import GPT, PaLM, HuggingFace, APIModelLlama7B, APIModelVicuna13B, GeminiPro, OpenRouter
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from config import VICUNA_PATH, LLAMA_PATH, ATTACK_TEMP, TARGET_TEMP, ATTACK_TOP_P, TARGET_TOP_P, MAX_PARALLEL_STREAMS 
@@ -214,6 +213,8 @@ def load_indiv_model(model_name):
     
     if model_name in ["gpt-3.5-turbo", "gpt-4", 'gpt-4-1106-preview']:
         lm = GPT(model_name)
+    elif "openrouter/" in model_name:  # Check if it's an OpenRouter model
+        lm = OpenRouter(model_name)
     elif model_name == "palm-2":
         lm = PaLM(model_name)
     elif model_name == "gemini-pro":
@@ -288,8 +289,29 @@ def get_model_path_and_template(model_name):
         "gemini-pro": {
             "path": "gemini-pro",
             "template": "gemini-pro"
-        }
+        },
+        "openrouter/anthropic/claude-2":{
+            "path": "openrouter/anthropic/claude-2",
+            "template": "gpt-4"  # Using GPT-4 template since format is similar
+        },
+        "openrouter/google/palm-2-chat-32k":{
+            "path": "openrouter/google/palm-2-chat-32k",
+            "template": "gpt-4"
+        },
+        "openrouter/meta-llama/llama-3.3-70b-chat":{
+            "path": "openrouter/meta-llama/llama-3.3-70b-chat", 
+            "template": "gpt-4"
+        },
     }
+    
+    # Handle OpenRouter models dynamically
+    if model_name.startswith("openrouter/"):
+        return model_name, "gpt-4"  # All OpenRouter models use GPT-4 style template
+    
+    # Handle existing models
+    if model_name not in full_model_dict:
+        raise ValueError(f"Unknown model: {model_name}")
+    
     path, template = full_model_dict[model_name]["path"], full_model_dict[model_name]["template"]
     return path, template
 
