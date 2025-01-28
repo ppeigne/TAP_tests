@@ -249,6 +249,26 @@ def main(args):
     logger.finish()
 
 
+def is_valid_model_name(model_name):
+    """Validate model name format"""
+    if model_name.startswith("openrouter/"):
+        # Check if it has the format openrouter/provider/model
+        parts = model_name.split("/")
+        return len(parts) == 3
+    return model_name in [
+        "vicuna", 
+        "vicuna-api-model", 
+        "gpt-3.5-turbo", 
+        "gpt-4", 
+        "gpt-4-turbo", 
+        "gpt-4-1106-preview",
+        "llama-2-api-model",
+        "llama-2",
+        "palm-2",
+        "gemini-pro"
+    ]
+
+
 if __name__ == '__main__':
 
     parser = argparse.ArgumentParser()
@@ -257,14 +277,8 @@ if __name__ == '__main__':
     parser.add_argument(
         "--attack-model",
         default = "vicuna",
-        help = "Name of attacking model.",
-        choices=["vicuna", 
-                 "vicuna-api-model", 
-                 "gpt-3.5-turbo", 
-                 "gpt-4", 
-                 "gpt-4-turbo", 
-                 "gpt-4-1106-preview", # This is same as gpt-4-turbo
-                 'llama-2-api-model']
+        help = "Name of attacking model. For OpenRouter models, use format: openrouter/provider/model",
+        type=str
     )
     parser.add_argument(
         "--attack-max-n-tokens",
@@ -284,18 +298,8 @@ if __name__ == '__main__':
     parser.add_argument(
         "--target-model",
         default = "vicuna",
-        help = "Name of target model.",
-        choices=["llama-2",
-                 'llama-2-api-model', 
-                 "vicuna",
-                 'vicuna-api-model', 
-                 "gpt-3.5-turbo", 
-                 "gpt-4",
-                 'gpt-4-turbo', 
-                 'gpt-4-1106-preview', # This is same as gpt-4-turbo
-                 "palm-2",
-                 "gemini-pro",
-                 ]
+        help = "Name of target model. For OpenRouter models, use format: openrouter/provider/model",
+        type=str
     )
     parser.add_argument(
         "--target-max-n-tokens",
@@ -408,5 +412,10 @@ if __name__ == '__main__':
     ##################################################
 
     args = parser.parse_args()
+
+    if not is_valid_model_name(args.attack_model):
+        raise ValueError(f"Invalid attack model name: {args.attack_model}")
+    if not is_valid_model_name(args.target_model):
+        raise ValueError(f"Invalid target model name: {args.target_model}")
 
     main(args)

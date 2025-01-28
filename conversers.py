@@ -213,7 +213,7 @@ def load_indiv_model(model_name):
     
     if model_name in ["gpt-3.5-turbo", "gpt-4", 'gpt-4-1106-preview']:
         lm = GPT(model_name)
-    elif "openrouter/" in model_name:  # Check if it's an OpenRouter model
+    elif "openrouter/" in model_name:
         lm = OpenRouter(model_name)
     elif model_name == "palm-2":
         lm = PaLM(model_name)
@@ -224,25 +224,28 @@ def load_indiv_model(model_name):
     elif model_name == 'vicuna-api-model':
         lm = APIModelVicuna13B(model_name)
     else:
-        model = AutoModelForCausalLM.from_pretrained(
-                model_path, 
-                torch_dtype=torch.float16,
-                low_cpu_mem_usage=True,
-                device_map="auto").eval()
+        # Load local models with gradient computation disabled
+        with torch.no_grad():
+            model = AutoModelForCausalLM.from_pretrained(
+                    model_path, 
+                    torch_dtype=torch.float16,
+                    low_cpu_mem_usage=True,
+                    device_map="auto"
+            ).eval()  # Put model in evaluation mode
 
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_path,
-            use_fast=False
-        ) 
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_path,
+                use_fast=False
+            ) 
 
-        if 'llama-2' in model_path.lower():
-            tokenizer.pad_token = tokenizer.unk_token
-            tokenizer.padding_side = 'left'
-        if 'vicuna' in model_path.lower():
-            tokenizer.pad_token = tokenizer.eos_token
-            tokenizer.padding_side = 'left'
-        if not tokenizer.pad_token:
-            tokenizer.pad_token = tokenizer.eos_token
+            if 'llama-2' in model_path.lower():
+                tokenizer.pad_token = tokenizer.unk_token
+                tokenizer.padding_side = 'left'
+            if 'vicuna' in model_path.lower():
+                tokenizer.pad_token = tokenizer.eos_token
+                tokenizer.padding_side = 'left'
+            if not tokenizer.pad_token:
+                tokenizer.pad_token = tokenizer.eos_token
 
         lm = HuggingFace(model_name, model, tokenizer)
     
