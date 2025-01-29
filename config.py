@@ -1,8 +1,9 @@
-VICUNA_PATH = "lmsys/vicuna-13b-v1.5"# ".../project/vicuna-13b-v1.5/" # ADD PATH
+VICUNA_PATH = 'lmsys/vicuna-13b-v1.5' #".../project/vicuna-13b-v1.5/" # ADD PATH
 LLAMA_PATH = ".../project/Llama-2-7b-chat-hf" # ADD PATH
 
 VICUNA_API_LINK ="https://..." # ADD LINK
 LLAMA_API_LINK = "https://..." # ADD LINK
+OPENROUTER_API_LINK = "https://openrouter.ai/api/v1/chat/completions"  # Add this line
 
 
 ATTACK_TEMP = 1

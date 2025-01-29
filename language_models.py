@@ -9,13 +9,6 @@ import google.generativeai as genai
 import urllib3
 from copy import deepcopy
 
-# Handle different OpenAI package versions
-try:
-    from openai import OpenAI  # New version
-    USE_LEGACY_OPENAI = False
-except ImportError:
-    USE_LEGACY_OPENAI = True  # Fall back to legacy version
-
 from config import LLAMA_API_LINK, VICUNA_API_LINK
 
     
@@ -41,40 +34,37 @@ class HuggingFace(LanguageModel):
                         max_n_tokens: int, 
                         temperature: float,
                         top_p: float = 1.0,):
-        # Move inputs to device and tokenize
         inputs = self.tokenizer(full_prompts_list, return_tensors='pt', padding=True)
         inputs = {k: v.to(self.model.device.index) for k, v in inputs.items()} 
 
-        # Use torch.no_grad() to prevent gradient computation
-        with torch.no_grad():
-            # Batch generation
-            if temperature > 0:
-                output_ids = self.model.generate(
-                    **inputs,
-                    max_new_tokens=max_n_tokens, 
-                    do_sample=True,
-                    temperature=temperature,
-                    eos_token_id=self.eos_token_ids,
-                    top_p=top_p,
-                )
-            else:
-                output_ids = self.model.generate(
-                    **inputs,
-                    max_new_tokens=max_n_tokens, 
-                    do_sample=False,
-                    eos_token_id=self.eos_token_ids,
-                    top_p=1,
-                    temperature=1, # To prevent warning messages
-                )
+        
+        # Batch generation
+        if temperature > 0:
+            output_ids = self.model.generate(
+                **inputs,
+                max_new_tokens=max_n_tokens, 
+                do_sample=True,
+                temperature=temperature,
+                eos_token_id=self.eos_token_ids,
+                top_p=top_p,
+            )
+        else:
+            output_ids = self.model.generate(
+                **inputs,
+                max_new_tokens=max_n_tokens, 
+                do_sample=False,
+                eos_token_id=self.eos_token_ids,
+                top_p=1,
+                temperature=1, # To prevent warning messages
+            )
             
-            # If the model is not an encoder-decoder type, slice off the input tokens
-            if not self.model.config.is_encoder_decoder:
-                output_ids = output_ids[:, inputs["input_ids"].shape[1]:]
+        # If the model is not an encoder-decoder type, slice off the input tokens
+        if not self.model.config.is_encoder_decoder:
+            output_ids = output_ids[:, inputs["input_ids"].shape[1]:]
 
-            # Batch decoding
-            outputs_list = self.tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+        # Batch decoding
+        outputs_list = self.tokenizer.batch_decode(output_ids, skip_special_tokens=True)
 
-        # Clean up memory
         for key in inputs:
             inputs[key].to('cpu')
         output_ids.to('cpu')
@@ -213,12 +203,7 @@ class GPT(LanguageModel):
     API_MAX_RETRY = 20
     API_TIMEOUT = 20
     
-    def __init__(self, model_name):
-        self.model_name = model_name
-        if not USE_LEGACY_OPENAI:
-            self.client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
-        else:
-            openai.api_key = os.getenv("OPENAI_API_KEY")
+    openai.api_key = os.getenv("OPENAI_API_KEY")
 
     def generate(self, conv: List[Dict], 
                 max_n_tokens: int, 
@@ -235,36 +220,24 @@ class GPT(LanguageModel):
         '''
         output = self.API_ERROR_OUTPUT
         for _ in range(self.API_MAX_RETRY):
-            try:
-                if not USE_LEGACY_OPENAI:
-                    # New OpenAI client version
-                    response = self.client.chat.completions.create(
-                        model=self.model_name,
-                        messages=conv,
-                        max_tokens=max_n_tokens,
-                        temperature=temperature,
-                        top_p=top_p,
-                        timeout=self.API_TIMEOUT,
-                    )
-                    output = response.choices[0].message.content
-                else:
-                    # Legacy OpenAI version
-                    response = openai.ChatCompletion.create(
-                        model=self.model_name,
-                        messages=conv,
-                        max_tokens=max_n_tokens,
-                        temperature=temperature,
-                        top_p=top_p,
-                        request_timeout=self.API_TIMEOUT,
-                    )
-                    output = response["choices"][0]["message"]["content"]
+            try: 
+                
+                response = openai.ChatCompletion.create(
+                            model = self.model_name,
+                            messages = conv,
+                            max_tokens = max_n_tokens,
+                            temperature = temperature,
+                            top_p = top_p,
+                            request_timeout = self.API_TIMEOUT,
+                            )
+                output = response["choices"][0]["message"]["content"]
                 break
-            except Exception as e:
+            except Exception as e: 
                 print(type(e), e)
                 time.sleep(self.API_RETRY_SLEEP)
-            
+        
             time.sleep(self.API_QUERY_SLEEP)
-        return output
+        return output 
     
     def batched_generate(self, 
                         convs_list: List[List[Dict]],
@@ -395,121 +368,55 @@ class GeminiPro():
         return [self.generate(conv, max_n_tokens, temperature, top_p) for conv in convs_list]
 
 class OpenRouter(GPT):
-    """OpenRouter API class that follows OpenAI's API format"""
+    """OpenRouter API wrapper that uses the OpenAI-compatible API format"""
     
     def __init__(self, model_name):
-        self.model_name = model_name
-        # Initialize OpenAI client with OpenRouter configuration
-        if not USE_LEGACY_OPENAI:
-            self.client = OpenAI(
-                base_url="https://openrouter.ai/api/v1",
-                api_key=os.getenv("OPENROUTER_API_KEY"),
-            )
-        else:
-            # For legacy OpenAI version, set the base URL and API key differently
-            openai.api_base = "https://openrouter.ai/api/v1"
-            openai.api_key = os.getenv("OPENROUTER_API_KEY")
-
-    def generate(self, conv: List[Dict],
-                max_n_tokens: int,
-                temperature: float, 
-                top_p: float):
-        output = self.API_ERROR_OUTPUT
-        for _ in range(self.API_MAX_RETRY):
-            try:
-                if not USE_LEGACY_OPENAI:
-                    # New OpenAI client version
-                    completion = self.client.chat.completions.create(
-                        model=self.model_name,
-                        messages=conv,
-                        max_tokens=max_n_tokens,
-                        temperature=temperature,
-                        top_p=top_p,
-                        extra_headers={
-                            "HTTP-Referer": "https://github.com/yourusername/yourrepo",
-                            "X-Title": "TAP Research",
-                        }
-                    )
-                    output = completion.choices[0].message.content
-                else:
-                    # Legacy OpenAI version
-                    completion = openai.ChatCompletion.create(
-                        model=self.model_name,
-                        messages=conv,
-                        max_tokens=max_n_tokens,
-                        temperature=temperature,
-                        top_p=top_p,
-                        headers={
-                            "HTTP-Referer": "https://github.com/yourusername/yourrepo",
-                            "X-Title": "TAP Research",
-                        }
-                    )
-                    output = completion["choices"][0]["message"]["content"]
-                break
-            except Exception as e:
-                print(type(e), e)
-                time.sleep(self.API_RETRY_SLEEP)
-            
-            time.sleep(self.API_QUERY_SLEEP)
-        return output
-
-    def batched_generate(self, 
-                        convs_list: List[List[Dict]],
-                        max_n_tokens: int, 
-                        temperature: float,
-                        top_p: float = 1.0,):
-        return [self.generate(conv, max_n_tokens, temperature, top_p) for conv in convs_list]
-
-class ReplicateModel(LanguageModel):
-    """Class for interacting with models hosted on Replicate"""
-    
-    API_RETRY_SLEEP = 10
-    API_ERROR_OUTPUT = "$ERROR$"
-    API_QUERY_SLEEP = 0.5
-    API_MAX_RETRY = 20
-    
-    def __init__(self, model_name):
-        self.model_name = model_name
-        self.client = replicate.Client(api_token=os.getenv("REPLICATE_API_TOKEN"))
-
-    def generate(self, prompt: str,
-                max_n_tokens: int,
+        super().__init__(model_name)
+        # Configure OpenAI for OpenRouter
+        openai.api_base = "https://openrouter.ai/api/v1"
+        openai.api_key = os.getenv("OPENROUTER_API_KEY")
+        # Strip "openrouter/" prefix for API calls
+        self.api_model_name = model_name.replace("openrouter/", "")
+        
+        # Set provider-specific configurations
+        self.provider = self.api_model_name.split('/')[0]  # e.g., "anthropic", "meta-llama"
+        
+    def generate(self, conv: List[Dict], 
+                max_n_tokens: int, 
                 temperature: float,
                 top_p: float):
-        """
-        Generate text using Replicate API
-        """
         output = self.API_ERROR_OUTPUT
-        
         for _ in range(self.API_MAX_RETRY):
             try:
-                # Run the model
-                output = self.client.run(
-                    self.model_name,
-                    input={
-                        "prompt": prompt,
-                        "max_new_tokens": max_n_tokens,
-                        "temperature": temperature,
-                        "top_p": top_p,
-                    }
+                # Make sure conv is properly formatted as messages
+                if isinstance(conv, str):
+                    messages = [{"role": "user", "content": conv}]
+                elif isinstance(conv, list) and all(isinstance(m, dict) for m in conv):
+                    messages = conv
+                else:
+                    raise ValueError(f"Invalid conv format: {conv}")
+
+                # Add provider-specific headers if needed
+                headers = {
+                    "HTTP-Referer": "http://localhost:3000",
+                    "X-Title": "LLM-Jailbreak"
+                }
+                
+                response = openai.ChatCompletion.create(
+                    headers=headers,
+                    model=self.api_model_name,
+                    messages=messages,
+                    max_tokens=max_n_tokens,
+                    temperature=temperature,
+                    top_p=top_p
                 )
-                
-                # Replicate returns an iterator, get the actual output
-                output = "".join(output)
+                output = response["choices"][0]["message"]["content"]
                 break
-                
             except Exception as e:
-                print('Replicate API exception:', type(e), e)
+                print(f"Error in OpenRouter generate: {type(e)} - {str(e)}")
+                print(f"Input conv: {conv}")
+                print(f"Model: {self.api_model_name}")
                 time.sleep(self.API_RETRY_SLEEP)
             
             time.sleep(self.API_QUERY_SLEEP)
-            
         return output
-
-    def batched_generate(self,
-                        prompts_list: List[str],
-                        max_n_tokens: int,
-                        temperature: float,
-                        top_p: float = 1.0):
-        return [self.generate(prompt, max_n_tokens, temperature, top_p) 
-                for prompt in prompts_list]

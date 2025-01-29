@@ -1,5 +1,5 @@
 import common
-from language_models import GPT, PaLM, HuggingFace, APIModelLlama7B, APIModelVicuna13B, GeminiPro, OpenRouter, ReplicateModel
+from language_models import GPT, PaLM, HuggingFace, APIModelLlama7B, APIModelVicuna13B, GeminiPro, OpenRouter
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from config import VICUNA_PATH, LLAMA_PATH, ATTACK_TEMP, TARGET_TEMP, ATTACK_TOP_P, TARGET_TOP_P, MAX_PARALLEL_STREAMS 
@@ -175,8 +175,9 @@ class TargetLLM():
         full_prompts = []
         for conv, prompt in zip(convs_list, prompts_list):
             conv.append_message(conv.roles[0], prompt)
-            if "gpt" in self.model_name:
-                # OpenAI does not have separators
+            if "openrouter/" in self.model_name:
+                full_prompts.append([{"role": "user", "content": prompt}])
+            elif "gpt" in self.model_name:
                 full_prompts.append(conv.to_openai_api_messages())
             elif "palm" in self.model_name:
                 full_prompts.append(conv.messages[-1][1])
@@ -223,37 +224,33 @@ def load_indiv_model(model_name):
         lm = APIModelLlama7B(model_name)
     elif model_name == 'vicuna-api-model':
         lm = APIModelVicuna13B(model_name)
-    elif model_name == 'vicuna-replicate':
-        lm = ReplicateModel("replicate/vicuna-13b")
     else:
-        # Load local models with gradient computation disabled
-        with torch.no_grad():
-            model = AutoModelForCausalLM.from_pretrained(
-                    model_path, 
-                    torch_dtype=torch.float16,
-                    low_cpu_mem_usage=True,
-                    device_map="auto"
-            ).eval()  # Put model in evaluation mode
+        model = AutoModelForCausalLM.from_pretrained(
+                model_path, 
+                torch_dtype=torch.float16,
+                low_cpu_mem_usage=True,
+                device_map="auto").eval()
 
-            tokenizer = AutoTokenizer.from_pretrained(
-                model_path,
-                use_fast=False
-            ) 
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_path,
+            use_fast=False
+        ) 
 
-            if 'llama-2' in model_path.lower():
-                tokenizer.pad_token = tokenizer.unk_token
-                tokenizer.padding_side = 'left'
-            if 'vicuna' in model_path.lower():
-                tokenizer.pad_token = tokenizer.eos_token
-                tokenizer.padding_side = 'left'
-            if not tokenizer.pad_token:
-                tokenizer.pad_token = tokenizer.eos_token
+        if 'llama-2' in model_path.lower():
+            tokenizer.pad_token = tokenizer.unk_token
+            tokenizer.padding_side = 'left'
+        if 'vicuna' in model_path.lower():
+            tokenizer.pad_token = tokenizer.eos_token
+            tokenizer.padding_side = 'left'
+        if not tokenizer.pad_token:
+            tokenizer.pad_token = tokenizer.eos_token
 
         lm = HuggingFace(model_name, model, tokenizer)
     
     return lm, template
 
 def get_model_path_and_template(model_name):
+    # Base model dictionary for non-OpenRouter models
     full_model_dict={
         "gpt-4-1106-preview":{
             "path":"gpt-4-1106-preview",
@@ -297,30 +294,42 @@ def get_model_path_and_template(model_name):
         },
         "openrouter/anthropic/claude-2":{
             "path": "openrouter/anthropic/claude-2",
-            "template": "gpt-4"  # Using GPT-4 template since format is similar
+            "template": "claude-2"
         },
-        "openrouter/google/palm-2-chat-32k":{
-            "path": "openrouter/google/palm-2-chat-32k",
-            "template": "gpt-4"
+        "openrouter/google/palm-2-chat-bison":{
+            "path": "openrouter/google/palm-2-chat-bison",
+            "template": "palm-2"
         },
-        "openrouter/meta-llama/llama-3.3-70b-chat":{
-            "path": "openrouter/meta-llama/llama-3.3-70b-chat", 
-            "template": "gpt-4"
+        "openrouter/meta-llama/llama-2-70b-chat":{
+            "path": "openrouter/meta-llama/llama-2-70b-chat", 
+            "template": "llama-2"
         },
-        "vicuna-replicate":{
-            "path": None,
-            "template": "vicuna_v1.1"
-        },
+        "openrouter/meta-llama/llama-3.3-70b-instruct":{
+            "path": "openrouter/meta-llama/llama-3.3-70b-instruct",
+            "template": "llama-2"  # Using llama-2 template since it's a Llama model
+        }
     }
     
     # Handle OpenRouter models dynamically
     if model_name.startswith("openrouter/"):
-        return model_name, "gpt-4"  # All OpenRouter models use GPT-4 style template
+        # Extract the base model name (e.g., "claude-2" from "openrouter/anthropic/claude-2")
+        base_model = model_name.split('/')[-1]
+        provider = model_name.split('/')[1]  # e.g., "anthropic", "meta-llama"
+        
+        # Determine template based on provider/model
+        if provider == "anthropic":
+            template = "claude-2"
+        elif provider == "meta-llama":
+            template = "llama-2"
+        elif provider == "google":
+            template = "palm-2"
+        else:
+            # Default to a generic template if provider is unknown
+            template = "gpt-4"
+            
+        return model_name, template
     
-    # Handle existing models
-    if model_name not in full_model_dict:
-        raise ValueError(f"Unknown model: {model_name}")
-    
+    # Handle non-OpenRouter models
     path, template = full_model_dict[model_name]["path"], full_model_dict[model_name]["template"]
     return path, template
 
