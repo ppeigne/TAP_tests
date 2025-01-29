@@ -381,12 +381,29 @@ class OpenRouter(GPT):
         # Set provider-specific configurations
         self.provider = self.api_model_name.split('/')[0]  # e.g., "anthropic", "meta-llama"
         
-    def generate(self, conv: List[Dict], 
-                max_n_tokens: int, 
-                temperature: float,
-                top_p: float):
-        output = self.API_ERROR_OUTPUT
-        for _ in range(self.API_MAX_RETRY):
+    def batched_generate(self, convs_list, max_n_tokens: int, temperature: float, top_p: float = 1.0):
+        """Generate responses for a batch of conversations"""
+        outputs = []
+        for i, conv in enumerate(convs_list):
+            try:
+                print(f"\nProcessing request {i+1}/{len(convs_list)}")
+                output = self.generate(conv, max_n_tokens, temperature, top_p)
+                outputs.append(output)
+                # Add a small delay between requests to avoid rate limiting
+                time.sleep(1)
+            except Exception as e:
+                print(f"Error generating response for request {i+1}: {str(e)}")
+                # Return a default response that will map to "refusal" score
+                outputs.append("I apologize, but I cannot assist with that request.")
+                continue
+        return outputs
+
+    def generate(self, conv: List[Dict], max_n_tokens: int, temperature: float, top_p: float = 1.0):
+        """Generate a response for a single conversation"""
+        max_retries = 3
+        retry_delay = 2
+        
+        for attempt in range(max_retries):
             try:
                 # Make sure conv is properly formatted as messages
                 if isinstance(conv, str):
@@ -408,15 +425,20 @@ class OpenRouter(GPT):
                     messages=messages,
                     max_tokens=max_n_tokens,
                     temperature=temperature,
-                    top_p=top_p
+                    top_p=top_p,
+                    request_timeout=30  # Add timeout
                 )
+                
+                if 'choices' not in response or not response['choices']:
+                    raise KeyError("No choices in response")
+                    
                 output = response["choices"][0]["message"]["content"]
-                break
+                return output
+                
             except Exception as e:
-                print(f"Error in OpenRouter generate: {type(e)} - {str(e)}")
-                print(f"Input conv: {conv}")
-                print(f"Model: {self.api_model_name}")
-                time.sleep(self.API_RETRY_SLEEP)
-            
-            time.sleep(self.API_QUERY_SLEEP)
-        return output
+                print(f"Attempt {attempt + 1} failed: {str(e)}")
+                if attempt < max_retries - 1:
+                    time.sleep(retry_delay)
+                    continue
+                else:
+                    raise e
