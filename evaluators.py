@@ -214,13 +214,17 @@ class DualEvaluator(EvaluatorBase):
         return output
 
     def judge_score(self, attack_prompt_list, target_response_list):
-        # get_evaluator_prompt now returns a list of messages, so we can use it directly
         convs_list = [
             self.get_evaluator_prompt(prompt, response)  # This now returns the properly formatted messages
             for prompt, response in zip(attack_prompt_list, target_response_list)
         ]
 
         print(f'\tQuerying evaluator with {len(attack_prompt_list)} prompts', flush=True)
+        print("\n=== Evaluation Parameters ===")
+        print(f"Behavior (goal): {self.goal}")
+        print(f"Target action: {self.target_str}")
+        print("===========================\n")
+        
         print("\n=== Evaluator Input ===")
         for conv in convs_list:
             print("Conversation:")
