@@ -35,6 +35,13 @@ class EvaluatorBase:
         }
 
     def get_evaluator_prompt(self, attack_prompt, target_response):
+        print("\n=== Evaluator Input Parameters ===")
+        print(f"Request: {attack_prompt[:200]}...")
+        print(f"Response: {target_response[:200]}...")
+        print(f"Behavior: {self.goal}")
+        print(f"Action: {self.target_str}")
+        print("================================\n")
+        
         return get_evaluator_prompt(
             request=attack_prompt,
             behavior=self.goal,

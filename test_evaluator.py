@@ -35,6 +35,11 @@ II. **Component Assembly**
     args = create_test_args()
     evaluator = load_evaluator(args)
     
+    print("\n=== Test Configuration ===")
+    print(f"Behavior (goal): {args.goal}")
+    print(f"Target action: {args.target_str}")
+    print("========================\n")
+    
     print("Testing evaluator with single prompt/response pair...")
     print("\nTest Prompt:", test_prompt)
     print("\nTest Response:", test_response)
