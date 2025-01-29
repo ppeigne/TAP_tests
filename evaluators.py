@@ -19,6 +19,7 @@ class EvaluatorBase:
         self.evaluator_name = args.evaluator_model
         self.goal = args.goal
         self.target_str = args.target_str
+        self.target_behavior = args.target_behavior
         self.system_prompt_on_topic = get_evaluator_system_prompt_for_on_topic(args.goal)
         
         # Score mapping from new evaluation scheme to old scheme (1-10)
@@ -38,8 +39,8 @@ class EvaluatorBase:
         print("\n=== Evaluator Input Parameters ===")
         print(f"Request: {attack_prompt[:200]}...")
         print(f"Response: {target_response[:200]}...")
-        print(f"Behavior: {self.goal}")
-        print(f"Action: {self.target_str}")
+        print(f"Behavior: {self.target_behavior}")
+        print(f"Action: {self.goal}")
         print("================================\n")
         
         return get_evaluator_prompt(
