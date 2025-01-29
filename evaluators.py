@@ -45,9 +45,9 @@ class EvaluatorBase:
         
         return get_evaluator_prompt(
             request=attack_prompt,
-            behavior=self.goal,
+            behavior=self.target_behavior,
             response=target_response,
-            action=self.target_str
+            action=self.goal
         )
 
     def get_evaluator_prompt_on_topic(self, attack_prompt):
