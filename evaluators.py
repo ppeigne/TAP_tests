@@ -229,8 +229,8 @@ class DualEvaluator(EvaluatorBase):
 
         print(f'\tQuerying evaluator with {len(attack_prompt_list)} prompts', flush=True)
         print("\n=== Evaluation Parameters ===")
-        print(f"Behavior (goal): {self.goal}")
-        print(f"Target action: {self.target_str}")
+        print(f"Behavior: {self.target_behavior}")
+        print(f"Target action: {self.goal}")
         print("===========================\n")
         
         print("\n=== Evaluator Input ===")
