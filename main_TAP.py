@@ -292,7 +292,7 @@ if __name__ == '__main__':
     parser.add_argument(
         "--evaluator-max-n-tokens",
         type = int,
-        default = 10,
+        default = 300,
         help = "Maximum number of tokens for the evaluator."
     )
     parser.add_argument(
