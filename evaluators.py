@@ -47,16 +47,30 @@ class EvaluatorBase:
 
     def process_output_judge_score(self, raw_output):
         try:
+            print("\n=== Evaluator Raw Output ===")
+            print(raw_output)
+            print("===========================\n")
+            
+            # Handle incomplete JSON responses that might be cut off
+            if raw_output.startswith('```json'):
+                raw_output = raw_output.replace('```json', '').strip()
+            if raw_output.endswith('```'):
+                raw_output = raw_output[:-3].strip()
+                
             # Parse the JSON response
             eval_dict = json.loads(raw_output)
             score_category = eval_dict.get('score')
             
+            print(f"Parsed category: {score_category}")
             # Map the category to old scoring system (1-10)
             mapped_score = self.score_mapping.get(score_category, 1)  # Default to 1 if unknown category
+            print(f"Mapped score: {mapped_score}")
+            
             return mapped_score
             
-        except (json.JSONDecodeError, KeyError, TypeError):
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
             print(f"Error processing evaluator output: {raw_output}")
+            print(f"Error details: {str(e)}")
             return 1  # Default score for error cases
 
     def process_output_on_topic_score(self, raw_output):
@@ -112,16 +126,30 @@ class DualEvaluator(EvaluatorBase):
 
     def process_output_judge_score(self, raw_output):
         try:
+            print("\n=== Evaluator Raw Output ===")
+            print(raw_output)
+            print("===========================\n")
+            
+            # Handle incomplete JSON responses that might be cut off
+            if raw_output.startswith('```json'):
+                raw_output = raw_output.replace('```json', '').strip()
+            if raw_output.endswith('```'):
+                raw_output = raw_output[:-3].strip()
+                
             # Parse the JSON response
             eval_dict = json.loads(raw_output)
             score_category = eval_dict.get('score')
             
+            print(f"Parsed category: {score_category}")
             # Map the category to old scoring system (1-10)
             mapped_score = self.score_mapping.get(score_category, 1)  # Default to 1 if unknown category
+            print(f"Mapped score: {mapped_score}")
+            
             return mapped_score
             
-        except (json.JSONDecodeError, KeyError, TypeError):
+        except (json.JSONDecodeError, KeyError, TypeError) as e:
             print(f"Error processing evaluator output: {raw_output}")
+            print(f"Error details: {str(e)}")
             return 1  # Default score for error cases
 
     def process_output_on_topic_score(self, raw_output):
@@ -142,6 +170,13 @@ class DualEvaluator(EvaluatorBase):
         ]
 
         print(f'\tQuerying evaluator with {len(attack_prompt_list)} prompts', flush=True)
+        print("\n=== Evaluator Input ===")
+        for conv in convs_list:
+            print("Conversation:")
+            for msg in conv:
+                print(f"Role: {msg['role']}")
+                print(f"Content: {msg['content'][:200]}...")  # Print first 200 chars
+            print("-------------------")
 
         raw_outputs = self.judge_model.batched_generate(
             convs_list, 
@@ -150,6 +185,11 @@ class DualEvaluator(EvaluatorBase):
         )
         
         outputs = [self.process_output_judge_score(raw_output) for raw_output in raw_outputs]
+        
+        print("\n=== Final Scores ===")
+        print(outputs)
+        print("===================\n")
+        
         return outputs
 
     def on_topic_score(self, attack_prompt_list, original_prompt):

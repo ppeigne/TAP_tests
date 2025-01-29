@@ -37,21 +37,35 @@ def prune(judge_scores=None,
         2. which exceed the `attack_params['width']` when arranged 
            in decreasing order of `sorting_score`.
     """
+    # If no valid scores, keep just the first item to continue the process
+    if not sorting_score or len(sorting_score) == 0:
+        if adv_prompt_list and len(adv_prompt_list) > 0:
+            return ([1], 
+                   [adv_prompt_list[0]], 
+                   [improv_list[0]], 
+                   [convs_list[0]], 
+                   [target_response_list[0]] if target_response_list else None,
+                   [extracted_attack_list[0]])
+        else:
+            return None, [], [], [], None, []
+
     # Shuffle the branches and sort them according to judge scores
-    shuffled_scores = enumerate(sorting_score)
+    shuffled_scores = list(enumerate(sorting_score))
     shuffled_scores = [(s, i) for (i, s) in shuffled_scores]
-    # Ensures that elements with the same score are randomly permuted
     np.random.shuffle(shuffled_scores) 
     shuffled_scores.sort(reverse=True)
 
     def get_first_k(list_):
+        if not list_ or len(list_) == 0:
+            return []
+            
         width = min(attack_params['width'], len(list_))
         # Keep only attacks with positive scores (>2 in new system, mapped to >3 in old system)
         truncated_list = [list_[shuffled_scores[i][1]] for i in range(width) if shuffled_scores[i][0] > 3]
 
-        # Ensure that the truncated list has at least two elements
+        # If no high-scoring items, keep the highest scoring one
         if len(truncated_list) == 0:
-            truncated_list = [list_[shuffled_scores[0][0]], list_[shuffled_scores[0][1]]] 
+            truncated_list = [list_[shuffled_scores[0][1]]]
         
         return truncated_list
 
