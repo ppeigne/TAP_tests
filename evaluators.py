@@ -214,8 +214,9 @@ class DualEvaluator(EvaluatorBase):
         return output
 
     def judge_score(self, attack_prompt_list, target_response_list):
+        # get_evaluator_prompt now returns a list of messages, so we can use it directly
         convs_list = [
-            self.create_conv(self.get_evaluator_prompt(prompt, response)) 
+            self.get_evaluator_prompt(prompt, response)  # This now returns the properly formatted messages
             for prompt, response in zip(attack_prompt_list, target_response_list)
         ]
 
@@ -243,6 +244,7 @@ class DualEvaluator(EvaluatorBase):
         return outputs
 
     def on_topic_score(self, attack_prompt_list, original_prompt):
+        # For on-topic, we still use the old format with system prompt
         convs_list = [
             self.create_conv(
                 self.get_evaluator_prompt_on_topic(prompt),
