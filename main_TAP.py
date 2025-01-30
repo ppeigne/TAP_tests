@@ -175,16 +175,18 @@ def run_tap_for_model(args, target_model_name, attack_llm, evaluator_llm, system
         if judge_scores:
             best_score = max(best_score, max(judge_scores))
 
-        # WandB log values
-        logger.log(
-                target_model_name,
-                iteration, 
-                extracted_attack_list,
-                target_response_list,
-                judge_scores,
-                None,  # Remove on_topic_scores
-                conv_ids=[c.self_id for c in convs_list],
-                parent_conv_ids=[c.parent_id for c in convs_list])
+        # Alternative logging format
+        log_data = {
+            'iteration': iteration,
+            'model_name': target_model_name,
+            'attack_list': extracted_attack_list,
+            'target_response_list': target_response_list,
+            'judge_scores': judge_scores,
+            'on_topic_scores': None,
+            'conv_ids': [c.self_id for c in convs_list],
+            'parent_conv_ids': [c.parent_id for c in convs_list]
+        }
+        logger.log(**log_data)
 
         # Truncate conversation to avoid context length issues
         for conv in convs_list:

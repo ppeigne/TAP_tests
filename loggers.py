@@ -10,110 +10,82 @@ from os.path import isfile, join
 import common 
 
 class WandBLogger:
-    """WandB logger."""
-
+    """Logger class for Weights & Biases"""
+    
     def __init__(self, args, system_prompt):
-        self.logger = wandb.init(
-            project = "jailbreak-llms",
-            config = {
-                "attack_model" : args.attack_model,
-                "target_model" : args.target_model,
-                "evaluator_model": args.evaluator_model,
-                "keep_last_n": args.keep_last_n,
-                "system_prompt": system_prompt,
-                "index": args.index,
-                "category": args.category,
+        """Initialize WandB logger"""
+        self.args = args
+        
+        # Initialize W&B
+        self.run = wandb.init(
+            project="TAP_multi_target",
+            config={
+                "attack_model": args.attack_model,
+                "target_model": args.target_model,
                 "goal": args.goal,
-                "depth": args.depth,
+                "target_str": args.target_str,
+                "system_prompt": system_prompt,
                 "width": args.width,
                 "branching_factor": args.branching_factor,
-                "target_str": args.target_str,
+                "depth": args.depth,
                 "n_streams": args.n_streams,
-
-            }
+                "keep_last_n": args.keep_last_n,
+            },
+            name=f"{args.target_model}_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
         )
-        self.is_jailbroken = False
-        self.query_to_jailbreak = 0
-        self.table = pd.DataFrame()
-        self.batch_size = args.n_streams
-        self.index = args.index
-        self.goal = args.goal
-        self.jailbreak_prompt = None
-        self.jailbreak_response = None
-
-    def log(self, iteration: int, attack_list: list, response_list: list, judge_scores: list, on_topic_scores: list = None, conv_ids: list = None, parent_conv_ids: list = None):
         
-        df = pd.DataFrame(attack_list)
-        df["target_response"] = response_list
-        df["judge_scores"] = judge_scores
-        df["on_topic_scores"] = on_topic_scores if on_topic_scores is not None else [-1 for a in judge_scores]
-        df["iter"] = iteration
+        # Create directory for storing results if it doesn't exist
+        self.results_dir = "results"
+        if not os.path.exists(self.results_dir):
+            os.makedirs(self.results_dir)
+            
+        # Initialize results tracking
+        self.results = []
+
+    def log(self, iteration, model_name, attack_list, target_response_list, 
+            judge_scores, on_topic_scores, conv_ids, parent_conv_ids):
+        """Log results to W&B and save locally"""
         
-        df["conv_id"] = conv_ids if conv_ids is not None else [i+1 for i in range(len(response_list))]
-        df["parent_conv_id"] = parent_conv_ids if parent_conv_ids is not None else [i+1 for i in range(len(response_list))]
-        
-        self.table = pd.concat([self.table, df])
-
-        self.query_to_jailbreak += len(response_list)
-
-        if any([score == 10 for score in judge_scores]):
-            jailbreak_ind = judge_scores.index(10)
-            if not self.is_jailbroken:
-                self.logger.log({"queries_to_jailbreak": self.query_to_jailbreak})
-                self.is_jailbroken = True
-
-            self.jailbreak_prompt = attack_list[jailbreak_ind]["prompt"]
-            self.jailbreak_response = response_list[jailbreak_ind]
-
-        self.logger.log({
-            "iteration":iteration,
-            "judge_scores":judge_scores,
-            "mean_judge_score_iter": sum(judge_scores) / len(judge_scores),
-            "is_jailbroken":self.is_jailbroken,
-            "max_judge_score":self.table["judge_scores"].max(),
-            "jailbreak_prompt":self.jailbreak_prompt,
-            "jailbreak_response":self.jailbreak_response,
-            "data": wandb.Table(data = self.table)})
-
-        self.print_summary_stats(iteration)
+        # Prepare data for logging
+        for i in range(len(attack_list)):
+            log_entry = {
+                'iteration': iteration,
+                'model_name': model_name,
+                'prompt': attack_list[i]['prompt'],
+                'improvement': attack_list[i]['improvement'],
+                'target_response': target_response_list[i] if target_response_list else None,
+                'judge_score': judge_scores[i] if judge_scores else None,
+                'on_topic_score': on_topic_scores[i] if on_topic_scores else None,
+                'conv_id': conv_ids[i],
+                'parent_conv_id': parent_conv_ids[i]
+            }
+            
+            # Add to results list
+            self.results.append(log_entry)
+            
+            # Log to W&B
+            wandb.log({
+                'iteration': iteration,
+                'model': model_name,
+                'judge_score': log_entry['judge_score'],
+                'on_topic_score': log_entry['on_topic_score'],
+                'prompt_length': len(log_entry['prompt']),
+                'response_length': len(log_entry['target_response']) if log_entry['target_response'] else 0
+            })
+            
+        # Save results periodically
+        if iteration % 5 == 0:
+            self._save_results()
 
     def finish(self):
-        self.print_final_summary_stats()
-        self.logger.finish()
+        """Finish logging and save final results"""
+        self._save_results()
+        if self.run is not None:
+            wandb.finish()
 
-    def print_summary_stats(self, iter):
-        bs = self.batch_size
-        df = self.table 
-        mean_score_for_iter = df[df['iter'] == iter]['judge_scores'].mean()
-        max_score_for_iter = df[df['iter'] == iter]['judge_scores'].max()
-        
-        num_total_jailbreaks = df[df['judge_scores'] == 10]['conv_id'].nunique()
-        
-        jailbreaks_at_iter = df[(df['iter'] == iter) & (df['judge_scores'] == 10)]['conv_id'].unique()
-        prev_jailbreaks = df[(df['iter'] < iter) & (df['judge_scores'] == 10)]['conv_id'].unique()
-
-        num_new_jailbreaks = len([cn for cn in jailbreaks_at_iter if cn not in prev_jailbreaks])
-
-        print(f"{'='*14} SUMMARY STATISTICS {'='*14}")
-        print(f"Mean/Max Score for iteration: {mean_score_for_iter:.1f}, {max_score_for_iter}")
-        print(f"Number of New Jailbreaks: {num_new_jailbreaks}/{bs}")
-        print(f"Total Number of Conv. Jailbroken: {num_total_jailbreaks}/{bs} ({num_total_jailbreaks/bs*100:2.1f}%)\n")
-
-    def print_final_summary_stats(self):
-        print(f"{'='*8} FINAL SUMMARY STATISTICS {'='*8}")
-        print(f"Index: {self.index}")
-        print(f"Goal: {self.goal}")
-        df = self.table
-        if self.is_jailbroken:
-            num_total_jailbreaks = df[df['judge_scores'] == 10]['conv_id'].nunique()
-            print(f"First Jailbreak: {self.query_to_jailbreak} Queries")
-            print(f"Total Number of Conv. Jailbroken: {num_total_jailbreaks}/{self.batch_size} ({num_total_jailbreaks/self.batch_size*100:2.1f}%)")
-            print(f"Example Jailbreak PROMPT:\n\n{self.jailbreak_prompt}\n\n")
-            print(f"Example Jailbreak RESPONSE:\n\n{self.jailbreak_response}\n\n\n")            
-            
-        else:
-            print("No jailbreaks achieved.")
-            max_score = df['judge_scores'].max()
-            print(f"Max Score: {max_score}")
-
-        self.table.to_parquet(common.STORE_FOLDER + '/' + f'iter_{common.ITER_INDEX}_df')
+    def _save_results(self):
+        """Save results to CSV file"""
+        if self.results:
+            df = pd.DataFrame(self.results)
+            filename = f"{self.results_dir}/results_{self.args.target_model}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            df.to_csv(filename, index=False)
