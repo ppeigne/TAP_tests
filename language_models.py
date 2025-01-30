@@ -9,7 +9,7 @@ import google.generativeai as genai
 import urllib3
 from copy import deepcopy
 
-from config import LLAMA_API_LINK, VICUNA_API_LINK
+from config import LLAMA_API_LINK, VICUNA_API_LINK, MAX_PARALLEL_STREAMS
 
     
 class LanguageModel():
