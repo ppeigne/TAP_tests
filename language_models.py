@@ -8,6 +8,7 @@ from typing import Dict, List
 import google.generativeai as genai
 import urllib3
 from copy import deepcopy
+import replicate
 
 from config import LLAMA_API_LINK, VICUNA_API_LINK, MAX_PARALLEL_STREAMS
 
@@ -48,48 +49,65 @@ class HuggingFace(LanguageModel):
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
                 
-            with torch.no_grad():  # Prevent gradient computation
-                inputs = self.tokenizer(batch, return_tensors='pt', padding=True)
-                inputs = {k: v.to(self.model.device.index) for k, v in inputs.items()} 
+            try:
+                with torch.no_grad():  # Prevent gradient computation
+                    inputs = self.tokenizer(batch, return_tensors='pt', padding=True)
+                    inputs = {k: v.to(self.model.device.index) for k, v in inputs.items()} 
+                    output_ids = None  # Initialize output_ids
 
-                try:
-                    # Batch generation
-                    if temperature > 0:
-                        output_ids = self.model.generate(
-                            **inputs,
-                            max_new_tokens=max_n_tokens, 
-                            do_sample=True,
-                            temperature=temperature,
-                            eos_token_id=self.eos_token_ids,
-                            top_p=top_p,
-                        )
-                    else:
-                        output_ids = self.model.generate(
-                            **inputs,
-                            max_new_tokens=max_n_tokens, 
-                            do_sample=False,
-                            eos_token_id=self.eos_token_ids,
-                            top_p=1,
-                            temperature=1, # To prevent warning messages
-                        )
+                    try:
+                        # Batch generation
+                        if temperature > 0:
+                            output_ids = self.model.generate(
+                                **inputs,
+                                max_new_tokens=max_n_tokens, 
+                                do_sample=True,
+                                temperature=temperature,
+                                eos_token_id=self.eos_token_ids,
+                                top_p=top_p,
+                            )
+                        else:
+                            output_ids = self.model.generate(
+                                **inputs,
+                                max_new_tokens=max_n_tokens, 
+                                do_sample=False,
+                                eos_token_id=self.eos_token_ids,
+                                top_p=1,
+                                temperature=1, # To prevent warning messages
+                            )
+                        
+                        # If the model is not an encoder-decoder type, slice off the input tokens
+                        if not self.model.config.is_encoder_decoder:
+                            output_ids = output_ids[:, inputs["input_ids"].shape[1]:]
+
+                        # Batch decoding
+                        batch_outputs = self.tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+                        outputs_list.extend(batch_outputs)
+
+                    except torch.cuda.OutOfMemoryError:
+                        print(f"OOM error with batch size {len(batch)}, trying with smaller batch...")
+                        # Try processing one at a time
+                        for single_prompt in batch:
+                            single_outputs = self.batched_generate([single_prompt], max_n_tokens, temperature, top_p)
+                            outputs_list.extend(single_outputs)
                     
-                    # If the model is not an encoder-decoder type, slice off the input tokens
-                    if not self.model.config.is_encoder_decoder:
-                        output_ids = output_ids[:, inputs["input_ids"].shape[1]:]
+                    finally:
+                        # Clean up
+                        for key in inputs:
+                            inputs[key].to('cpu')
+                        if output_ids is not None:
+                            output_ids.to('cpu')
+                        del inputs
+                        if output_ids is not None:
+                            del output_ids
+                        gc.collect()
+                        if torch.cuda.is_available():
+                            torch.cuda.empty_cache()
 
-                    # Batch decoding
-                    batch_outputs = self.tokenizer.batch_decode(output_ids, skip_special_tokens=True)
-                    outputs_list.extend(batch_outputs)
-
-                finally:
-                    # Clean up
-                    for key in inputs:
-                        inputs[key].to('cpu')
-                    output_ids.to('cpu')
-                    del inputs, output_ids
-                    gc.collect()
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
+            except Exception as e:
+                print(f"Error processing batch: {str(e)}")
+                # Return empty string for failed generations
+                outputs_list.extend(["" for _ in batch])
 
             # Clear cache after processing batch
             if torch.cuda.is_available():
@@ -465,3 +483,47 @@ class OpenRouter(GPT):
                     continue
                 else:
                     raise e
+
+class ReplicateModel(LanguageModel):
+    """Class for interacting with Vicuna hosted on Replicate"""
+    
+    def __init__(self, model_name):
+        super().__init__(model_name)
+        self.client = replicate.Client(api_token=os.getenv("REPLICATE_API_TOKEN"))
+        # Use Vicuna 13B model identifier
+        self.model_version = "replicate/vicuna-13b:6282abe6a492de4145d7bb601023762212f9ddbbe78278bd6771c8b3b2f2a13b"
+        self.template = "vicuna_v1.1"  # Keep the same template as local Vicuna
+
+    def batched_generate(self, 
+                        prompts_list: List[str],
+                        max_n_tokens: int, 
+                        temperature: float,
+                        top_p: float = 1.0):
+        """Generate responses for a batch of prompts"""
+        outputs = []
+        
+        for prompt in prompts_list:
+            try:
+                # Run the model
+                output = self.client.run(
+                    self.model_version,
+                    input={
+                        "prompt": prompt,
+                        "max_new_tokens": max_n_tokens,
+                        "temperature": temperature,
+                        "top_p": top_p,
+                    }
+                )
+                
+                # Replicate returns an iterator, get the actual output
+                output = "".join(output)
+                outputs.append(output)
+                
+            except Exception as e:
+                print(f"Replicate API error: {str(e)}")
+                outputs.append("")  # Return empty string for failed generations
+                
+            # Add a small delay between requests to avoid rate limits
+            time.sleep(0.5)
+            
+        return outputs

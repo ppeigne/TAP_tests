@@ -1,5 +1,5 @@
 import common
-from language_models import GPT, PaLM, HuggingFace, APIModelLlama7B, APIModelVicuna13B, GeminiPro, OpenRouter
+from language_models import GPT, PaLM, HuggingFace, APIModelLlama7B, APIModelVicuna13B, GeminiPro, OpenRouter, ReplicateModel
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 from config import VICUNA_PATH, LLAMA_PATH, ATTACK_TEMP, TARGET_TEMP, ATTACK_TOP_P, TARGET_TOP_P, MAX_PARALLEL_STREAMS 
@@ -224,6 +224,8 @@ def load_indiv_model(model_name):
         lm = APIModelLlama7B(model_name)
     elif model_name == 'vicuna-api-model':
         lm = APIModelVicuna13B(model_name)
+    elif model_name == 'vicuna-replicate':
+        lm = ReplicateModel(model_name)
     else:
         model = AutoModelForCausalLM.from_pretrained(
                 model_path, 
@@ -309,7 +311,11 @@ def get_model_path_and_template(model_name):
         "openrouter/meta-llama/llama-3.3-70b-instruct":{
             "path": "openrouter/meta-llama/llama-3.3-70b-instruct",
             "template": "llama-2"  # Using llama-2 template since it's a Llama model
-        }
+        },
+        "vicuna-replicate":{
+            "path": None,
+            "template": "vicuna_v1.1"
+        },
     }
     
     # Handle OpenRouter models dynamically
