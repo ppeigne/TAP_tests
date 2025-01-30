@@ -527,3 +527,10 @@ class ReplicateModel(LanguageModel):
             time.sleep(0.5)
             
         return outputs
+
+    def extend_eos_tokens(self):
+        """
+        No-op method for API compatibility.
+        Not needed for Replicate API since it handles end tokens internally.
+        """
+        pass
