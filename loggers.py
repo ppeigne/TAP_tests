@@ -88,5 +88,16 @@ class WandBLogger:
         """Save results to CSV file"""
         if self.results:
             df = pd.DataFrame(self.results)
-            filename = f"{self.results_dir}/results_{self.args.target_model}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            
+            # Replace slashes with underscores in model name for filename
+            safe_model_name = self.args.target_model.replace('/', '_')
+            
+            filename = os.path.join(
+                self.results_dir,
+                f"results_{safe_model_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv"
+            )
+            
+            # Ensure the directory exists
+            os.makedirs(os.path.dirname(filename), exist_ok=True)
+            
             df.to_csv(filename, index=False)
