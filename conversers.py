@@ -225,15 +225,21 @@ def load_indiv_model(model_name):
     elif model_name == 'vicuna-api-model':
         lm = APIModelVicuna13B(model_name)
     else:
+        # Add memory optimization configurations
         model = AutoModelForCausalLM.from_pretrained(
                 model_path, 
                 torch_dtype=torch.float16,
                 low_cpu_mem_usage=True,
-                device_map="auto").eval()
+                device_map="auto",
+                load_in_8bit=True,  # Enable 8-bit quantization
+                max_memory={0: "12GB"},  # Limit GPU memory usage
+                offload_folder="offload"  # Enable CPU offloading
+        ).eval()
 
         tokenizer = AutoTokenizer.from_pretrained(
             model_path,
-            use_fast=False
+            use_fast=True,  # Enable fast tokenizer
+            model_max_length=2048  # Limit context length
         ) 
 
         if 'llama-2' in model_path.lower():

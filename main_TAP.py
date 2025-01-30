@@ -6,6 +6,7 @@ from loggers import WandBLogger
 from evaluators import load_evaluator
 from conversers import load_attack_and_target_models, load_target_model
 from common import process_target_response, get_init_msg, conv_template, random_string
+import torch
 
 import common
 
@@ -98,7 +99,7 @@ def run_tap_for_model(args, target_model_name, attack_llm, evaluator_llm, system
     print('Done initializing logger!', flush=True)
 
     # Initialize conversations
-    batchsize = args.n_streams
+    batchsize = min(args.n_streams, 3)  # Limit batch size
     init_msg = get_init_msg(args.goal, args.target_str)
     processed_response_list = [init_msg for _ in range(batchsize)]
     convs_list = [conv_template(attack_llm.template, 
@@ -128,10 +129,18 @@ def run_tap_for_model(args, target_model_name, attack_llm, evaluator_llm, system
                 c_new.self_id = random_string(32)
                 c_new.parent_id = c_old.self_id
             
+            # Clear cache before each branch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                
             extracted_attack_list.extend(
                     attack_llm.get_attack(convs_list_copy, processed_response_list)
                 )
             convs_list_new.extend(convs_list_copy)
+            
+            # Clear cache after each branch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         # Remove any failed attacks and corresponding conversations
         convs_list = copy.deepcopy(convs_list_new)
@@ -143,12 +152,23 @@ def run_tap_for_model(args, target_model_name, attack_llm, evaluator_llm, system
         ############################################################
         #   QUERY AND ASSESS
         ############################################################
+        # Clear cache before target model queries
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            
         target_response_list = target_llm.get_response(adv_prompt_list)
         print("Finished getting target responses.") 
 
-        # Get judge-scores from Evaluator
+        # Clear cache before evaluator
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            
         judge_scores = evaluator_llm.judge_score(adv_prompt_list, target_response_list)
         print("Finished getting judge scores from evaluator.")
+
+        # Clear cache after evaluation
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
         ############################################################
         #   PRUNE

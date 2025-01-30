@@ -28,49 +28,72 @@ class HuggingFace(LanguageModel):
         self.model = model 
         self.tokenizer = tokenizer
         self.eos_token_ids = [self.tokenizer.eos_token_id]
+        
+        # Clear cache on initialization
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
 
     def batched_generate(self, 
                         full_prompts_list,
                         max_n_tokens: int, 
                         temperature: float,
                         top_p: float = 1.0,):
-        inputs = self.tokenizer(full_prompts_list, return_tensors='pt', padding=True)
-        inputs = {k: v.to(self.model.device.index) for k, v in inputs.items()} 
-
+        # Process in batches of MAX_PARALLEL_STREAMS
+        outputs_list = []
         
-        # Batch generation
-        if temperature > 0:
-            output_ids = self.model.generate(
-                **inputs,
-                max_new_tokens=max_n_tokens, 
-                do_sample=True,
-                temperature=temperature,
-                eos_token_id=self.eos_token_ids,
-                top_p=top_p,
-            )
-        else:
-            output_ids = self.model.generate(
-                **inputs,
-                max_new_tokens=max_n_tokens, 
-                do_sample=False,
-                eos_token_id=self.eos_token_ids,
-                top_p=1,
-                temperature=1, # To prevent warning messages
-            )
+        for i in range(0, len(full_prompts_list), MAX_PARALLEL_STREAMS):
+            batch = full_prompts_list[i:i + MAX_PARALLEL_STREAMS]
             
-        # If the model is not an encoder-decoder type, slice off the input tokens
-        if not self.model.config.is_encoder_decoder:
-            output_ids = output_ids[:, inputs["input_ids"].shape[1]:]
+            # Clear cache before processing batch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                
+            with torch.no_grad():  # Prevent gradient computation
+                inputs = self.tokenizer(batch, return_tensors='pt', padding=True)
+                inputs = {k: v.to(self.model.device.index) for k, v in inputs.items()} 
 
-        # Batch decoding
-        outputs_list = self.tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+                try:
+                    # Batch generation
+                    if temperature > 0:
+                        output_ids = self.model.generate(
+                            **inputs,
+                            max_new_tokens=max_n_tokens, 
+                            do_sample=True,
+                            temperature=temperature,
+                            eos_token_id=self.eos_token_ids,
+                            top_p=top_p,
+                        )
+                    else:
+                        output_ids = self.model.generate(
+                            **inputs,
+                            max_new_tokens=max_n_tokens, 
+                            do_sample=False,
+                            eos_token_id=self.eos_token_ids,
+                            top_p=1,
+                            temperature=1, # To prevent warning messages
+                        )
+                    
+                    # If the model is not an encoder-decoder type, slice off the input tokens
+                    if not self.model.config.is_encoder_decoder:
+                        output_ids = output_ids[:, inputs["input_ids"].shape[1]:]
 
-        for key in inputs:
-            inputs[key].to('cpu')
-        output_ids.to('cpu')
-        del inputs, output_ids
-        gc.collect()
-        torch.cuda.empty_cache()
+                    # Batch decoding
+                    batch_outputs = self.tokenizer.batch_decode(output_ids, skip_special_tokens=True)
+                    outputs_list.extend(batch_outputs)
+
+                finally:
+                    # Clean up
+                    for key in inputs:
+                        inputs[key].to('cpu')
+                    output_ids.to('cpu')
+                    del inputs, output_ids
+                    gc.collect()
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+
+            # Clear cache after processing batch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
         return outputs_list
 
