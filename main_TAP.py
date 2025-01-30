@@ -238,10 +238,29 @@ def main(args):
 def get_openrouter_models():
     """Get list of available OpenRouter models"""
     return [
+        # Anthropic models
         "openrouter/anthropic/claude-2",
+        "openrouter/anthropic/claude-3-opus",
+        "openrouter/anthropic/claude-3.5-sonnet",
+        
+        # Google models
         "openrouter/google/palm-2-chat-bison",
+        "openrouter/google/gemini-pro-1.5",
+        
+        # OpenAI models
+        "openrouter/openai/gpt-4-turbo",
+        "openrouter/openai/gpt-4-0125",
+        "openrouter/openai/gpt-4o-2024-11-20",
+        
+        # Meta models
         "openrouter/meta-llama/llama-2-70b-chat",
+        "openrouter/meta-llama/llama-3.1-405b-instruct",
         "openrouter/meta-llama/llama-3.3-70b-instruct",
+        
+        # Mistral models
+        "openrouter/mistral/mistral-large",
+        "openrouter/mistral/mistral-medium",
+        "openrouter/mistral/mistral-small",
     ]
 
 if __name__ == '__main__':
@@ -417,9 +436,16 @@ if __name__ == '__main__':
                    "gpt-3.5-turbo", "gpt-4", 'gpt-4-turbo', 'gpt-4-1106-preview',
                    "palm-2", "gemini-pro"] + get_openrouter_models()
     
+    # Clean and validate target models
     target_models = [model.strip() for model in args.target_models.split(',')]
     for model in target_models:
         if model not in valid_models:
+            # Try to find a close match (ignoring spaces)
+            model_no_spaces = model.replace(" ", "")
+            valid_model_matches = [valid for valid in valid_models if valid.replace(" ", "") == model_no_spaces]
+            if valid_model_matches:
+                print(f"Warning: Model name '{model}' contains spaces. Using '{valid_model_matches[0]}' instead.")
+                continue
             raise ValueError(f"Invalid target model: {model}. Valid options are: {valid_models}")
 
     main(args)
