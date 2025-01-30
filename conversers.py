@@ -214,8 +214,10 @@ def load_indiv_model(model_name):
     
     if model_name in ["gpt-3.5-turbo", "gpt-4", 'gpt-4-1106-preview']:
         lm = GPT(model_name)
-    elif "openrouter/" in model_name:
+    elif model_name.startswith("openrouter/"):
         lm = OpenRouter(model_name)
+    elif model_name.startswith("replicate/"):
+        lm = ReplicateModel(model_name)
     elif model_name == "palm-2":
         lm = PaLM(model_name)
     elif model_name == "gemini-pro":
@@ -224,8 +226,6 @@ def load_indiv_model(model_name):
         lm = APIModelLlama7B(model_name)
     elif model_name == 'vicuna-api-model':
         lm = APIModelVicuna13B(model_name)
-    elif model_name == 'vicuna-replicate':
-        lm = ReplicateModel(model_name)
     else:
         model = AutoModelForCausalLM.from_pretrained(
                 model_path, 
@@ -316,28 +316,42 @@ def get_model_path_and_template(model_name):
             "path": None,
             "template": "vicuna_v1.1"
         },
+        # Add Replicate models
+        "replicate/vicuna-13b":{
+            "path": None,
+            "template": "vicuna_v1.1"
+        },
     }
     
-    # Handle OpenRouter models dynamically
-    if model_name.startswith("openrouter/"):
-        # Extract the base model name (e.g., "claude-2" from "openrouter/anthropic/claude-2")
-        base_model = model_name.split('/')[-1]
-        provider = model_name.split('/')[1]  # e.g., "anthropic", "meta-llama"
+    # Handle OpenRouter and Replicate models dynamically
+    if model_name.startswith("openrouter/") or model_name.startswith("replicate/"):
+        # Extract the provider and model name
+        provider = model_name.split('/')[0]  # e.g., "openrouter" or "replicate"
+        model_type = model_name.split('/')[1]  # e.g., "anthropic", "vicuna-13b"
         
         # Determine template based on provider/model
-        if provider == "anthropic":
-            template = "claude-2"
-        elif provider == "meta-llama":
-            template = "llama-2"
-        elif provider == "google":
-            template = "palm-2"
-        else:
-            # Default to a generic template if provider is unknown
-            template = "gpt-4"
+        if provider == "replicate":
+            if "vicuna" in model_type:
+                template = "vicuna_v1.1"
+            else:
+                template = "gpt-4"  # default template
+        elif provider == "openrouter":
+            # Extract the base model name (e.g., "claude-2" from "openrouter/anthropic/claude-2")
+            base_model = model_type
+            # Determine template based on provider/model
+            if base_model == "anthropic":
+                template = "claude-2"
+            elif base_model == "meta-llama":
+                template = "llama-2"
+            elif base_model == "google":
+                template = "palm-2"
+            else:
+                # Default to a generic template if provider is unknown
+                template = "gpt-4"
             
-        return model_name, template
+            return model_name, template
     
-    # Handle non-OpenRouter models
+    # Handle other models
     path, template = full_model_dict[model_name]["path"], full_model_dict[model_name]["template"]
     return path, template
 

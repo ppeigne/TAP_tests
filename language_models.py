@@ -485,14 +485,14 @@ class OpenRouter(GPT):
                     raise e
 
 class ReplicateModel(LanguageModel):
-    """Class for interacting with Vicuna hosted on Replicate"""
+    """Class for interacting with models hosted on Replicate"""
     
     def __init__(self, model_name):
         super().__init__(model_name)
         self.client = replicate.Client(api_token=os.getenv("REPLICATE_API_TOKEN"))
-        # Use Vicuna 13B model identifier
-        self.model_version = "replicate/vicuna-13b:6282abe6a492de4145d7bb601023762212f9ddbbe78278bd6771c8b3b2f2a13b"
-        self.template = "vicuna_v1.1"  # Keep the same template as local Vicuna
+        # Model version ID for Vicuna 13B
+        self.model_version = "6282abe6a492de4145d7bb601023762212f9ddbbe78278bd6771c8b3b2f2a13b"
+        self.template = "vicuna_v1.1"
 
     def batched_generate(self, 
                         prompts_list: List[str],
@@ -506,7 +506,7 @@ class ReplicateModel(LanguageModel):
             try:
                 # Run the model
                 output = self.client.run(
-                    self.model_version,
+                    f"replicate/vicuna-13b:{self.model_version}",
                     input={
                         "prompt": prompt,
                         "max_new_tokens": max_n_tokens,
