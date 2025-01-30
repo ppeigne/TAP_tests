@@ -34,9 +34,9 @@ def load_attack_and_target_models(args):
 
 class AttackLLM():
     """
-        Base class for attacker language models.
-        Generates attacks for conversations using a language model. 
-        The self.model attribute contains the underlying generation model.
+    Base class for attacker language models.
+    Generates attacks for conversations using a language model. 
+    The self.model attribute contains the underlying generation model.
     """
     def __init__(self, 
                 model_name: str, 
@@ -50,11 +50,20 @@ class AttackLLM():
         self.max_n_tokens = max_n_tokens
         self.max_n_attack_attempts = max_n_attack_attempts
         self.top_p = top_p
-        self.model, self.template = load_indiv_model(model_name)
         
-        if "vicuna" in model_name or "llama" in model_name:
-            if "api-model" not in model_name:
-                self.model.extend_eos_tokens()
+        try:
+            # Get model and template without loading if it's an API model
+            if model_name.startswith(("openrouter/", "replicate/", "gpt-", "palm-2", "gemini-pro")) or \
+               model_name in ["llama-2-api-model", "vicuna-api-model"]:
+                self.model, self.template = load_indiv_model(model_name)
+            else:
+                # Only load local models
+                self.model, self.template = load_indiv_model(model_name)
+                if "vicuna" in model_name or "llama" in model_name:
+                    if "api-model" not in model_name:
+                        self.model.extend_eos_tokens()
+        except Exception as e:
+            raise ValueError(f"Failed to initialize model {model_name}: {str(e)}")
 
     def get_attack(self, convs_list, prompts_list):
         """
@@ -76,7 +85,7 @@ class AttackLLM():
         indices_to_regenerate = list(range(batchsize))
         valid_outputs = [None] * batchsize
 
-        # Initalize the attack model's generated output to match format
+        # Initialize the attack model's generated output to match format
         if len(convs_list[0].messages) == 0:
             init_message = """{\"improvement\": \"\",\"prompt\": \""""
         else:
@@ -98,8 +107,6 @@ class AttackLLM():
             full_prompts_subset = [full_prompts[i] for i in indices_to_regenerate]
 
             # Generate outputs 
-            #     Query the attack LLM in batched-queries 
-            #       with at most MAX_PARALLEL_STREAMS-many queries at a time
             outputs_list = []
             for left in range(0, len(full_prompts_subset), MAX_PARALLEL_STREAMS):
                 right = min(left + MAX_PARALLEL_STREAMS, len(full_prompts_subset)) 
@@ -208,7 +215,10 @@ class TargetLLM():
 
 
 def load_indiv_model(model_name):
-    model_path, template = get_model_path_and_template(model_name)
+    try:
+        model_path, template = get_model_path_and_template(model_name)
+    except Exception as e:
+        raise ValueError(f"Failed to get model path and template for {model_name}: {str(e)}")
     
     common.MODEL_NAME = model_name
     
@@ -229,29 +239,32 @@ def load_indiv_model(model_name):
         lm = APIModelVicuna13B(model_name)
     # Only load from HuggingFace for local models
     elif model_path is not None:  # Check if it's a local model path
-        model = AutoModelForCausalLM.from_pretrained(
-                model_path, 
-                torch_dtype=torch.float16,
-                low_cpu_mem_usage=True,
-                device_map="auto"
-        ).eval()
+        try:
+            model = AutoModelForCausalLM.from_pretrained(
+                    model_path, 
+                    torch_dtype=torch.float16,
+                    low_cpu_mem_usage=True,
+                    device_map="auto"
+            ).eval()
 
-        tokenizer = AutoTokenizer.from_pretrained(
-            model_path,
-            use_fast=True,
-            model_max_length=2048
-        ) 
+            tokenizer = AutoTokenizer.from_pretrained(
+                model_path,
+                use_fast=True,
+                model_max_length=2048
+            ) 
 
-        if 'llama-2' in model_path.lower():
-            tokenizer.pad_token = tokenizer.unk_token
-            tokenizer.padding_side = 'left'
-        if 'vicuna' in model_path.lower():
-            tokenizer.pad_token = tokenizer.eos_token
-            tokenizer.padding_side = 'left'
-        if not tokenizer.pad_token:
-            tokenizer.pad_token = tokenizer.eos_token
+            if 'llama-2' in model_path.lower():
+                tokenizer.pad_token = tokenizer.unk_token
+                tokenizer.padding_side = 'left'
+            if 'vicuna' in model_path.lower():
+                tokenizer.pad_token = tokenizer.eos_token
+                tokenizer.padding_side = 'left'
+            if not tokenizer.pad_token:
+                tokenizer.pad_token = tokenizer.eos_token
 
-        lm = HuggingFace(model_name, model, tokenizer)
+            lm = HuggingFace(model_name, model, tokenizer)
+        except Exception as e:
+            raise ValueError(f"Failed to load local model {model_name}: {str(e)}")
     else:
         raise ValueError(f"Unknown model type or missing model path: {model_name}")
     
@@ -330,34 +343,37 @@ def get_model_path_and_template(model_name):
     # Handle OpenRouter and Replicate models dynamically
     if model_name.startswith("openrouter/") or model_name.startswith("replicate/"):
         # Extract the provider and model name
-        provider = model_name.split('/')[0]  # e.g., "openrouter" or "replicate"
-        model_type = model_name.split('/')[1]  # e.g., "anthropic", "vicuna-13b"
+        provider = model_name.split('/')[0]  
+        model_type = model_name.split('/')[1]  
         
-        # Determine template based on provider/model
         if provider == "replicate":
             if "vicuna" in model_type:
                 template = "vicuna_v1.1"
             else:
-                template = "gpt-4"  # default template
+                template = "gpt-4"
+            return model_name, template  # Add this return
         elif provider == "openrouter":
-            # Extract the base model name (e.g., "claude-2" from "openrouter/anthropic/claude-2")
-            base_model = model_type
-            # Determine template based on provider/model
-            if base_model == "anthropic":
+            # Extract the base model name
+            base_model = model_name.split('/')[-1]  # Fix: use last part for base_model
+            provider = model_name.split('/')[1]  # e.g., "anthropic", "meta-llama"
+            
+            if provider == "anthropic":
                 template = "claude-2"
-            elif base_model == "meta-llama":
+            elif provider == "meta-llama":
                 template = "llama-2"
-            elif base_model == "google":
+            elif provider == "google":
                 template = "palm-2"
             else:
-                # Default to a generic template if provider is unknown
                 template = "gpt-4"
             
             return model_name, template
     
     # Handle other models
-    path, template = full_model_dict[model_name]["path"], full_model_dict[model_name]["template"]
-    return path, template
+    if model_name in full_model_dict:
+        path, template = full_model_dict[model_name]["path"], full_model_dict[model_name]["template"]
+        return path, template
+    else:
+        raise ValueError(f"Unknown model: {model_name}")
 
 
 
