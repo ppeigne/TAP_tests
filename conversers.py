@@ -20,10 +20,15 @@ def load_attack_and_target_models(args):
                         temperature = ATTACK_TEMP, # init to 1
                         top_p = ATTACK_TOP_P, # init to 0.9
                         )
+    
+    # Only share model if both are local models
     preloaded_model = None
-    if args.attack_model == args.target_model:
+    if (args.attack_model == args.target_model and 
+        not args.attack_model.startswith(("openrouter/", "replicate/", "gpt-", "palm-2", "gemini-pro")) and
+        args.attack_model not in ["llama-2-api-model", "vicuna-api-model"]):
         print("Using same attack and target model. Using previously loaded model.")
         preloaded_model = attack_llm.model
+        
     target_llm = TargetLLM(model_name = args.target_model, 
                         max_n_tokens = args.target_max_n_tokens,
                         temperature = TARGET_TEMP, # init to 0
@@ -170,11 +175,19 @@ class TargetLLM():
         self.temperature = temperature
         self.max_n_tokens = max_n_tokens
         self.top_p = top_p
-        if preloaded_model is None:
-            self.model, self.template = load_indiv_model(model_name)
-        else:
-            self.model = preloaded_model
-            _, self.template = get_model_path_and_template(model_name)
+        
+        try:
+            # If we have a preloaded model and it's not an API model, use it
+            if (preloaded_model is not None and 
+                not model_name.startswith(("openrouter/", "replicate/", "gpt-", "palm-2", "gemini-pro")) and
+                model_name not in ["llama-2-api-model", "vicuna-api-model"]):
+                self.model = preloaded_model
+                _, self.template = get_model_path_and_template(model_name)
+            else:
+                # Otherwise load new model (API or local)
+                self.model, self.template = load_indiv_model(model_name)
+        except Exception as e:
+            raise ValueError(f"Failed to initialize model {model_name}: {str(e)}")
 
     def get_response(self, prompts_list):
         batchsize = len(prompts_list)
