@@ -212,12 +212,13 @@ def load_indiv_model(model_name):
     
     common.MODEL_NAME = model_name
     
-    if model_name in ["gpt-3.5-turbo", "gpt-4", 'gpt-4-1106-preview']:
-        lm = GPT(model_name)
-    elif model_name.startswith("openrouter/"):
+    # Handle API-based models first
+    if model_name.startswith("openrouter/"):
         lm = OpenRouter(model_name)
     elif model_name.startswith("replicate/"):
         lm = ReplicateModel(model_name)
+    elif model_name in ["gpt-3.5-turbo", "gpt-4", 'gpt-4-1106-preview']:
+        lm = GPT(model_name)
     elif model_name == "palm-2":
         lm = PaLM(model_name)
     elif model_name == "gemini-pro":
@@ -226,7 +227,8 @@ def load_indiv_model(model_name):
         lm = APIModelLlama7B(model_name)
     elif model_name == 'vicuna-api-model':
         lm = APIModelVicuna13B(model_name)
-    else:
+    # Only load from HuggingFace for local models
+    elif model_path is not None:  # Check if it's a local model path
         model = AutoModelForCausalLM.from_pretrained(
                 model_path, 
                 torch_dtype=torch.float16,
@@ -236,8 +238,8 @@ def load_indiv_model(model_name):
 
         tokenizer = AutoTokenizer.from_pretrained(
             model_path,
-            use_fast=True,  # Keep fast tokenizer for better performance
-            model_max_length=2048  # Keep reasonable context length
+            use_fast=True,
+            model_max_length=2048
         ) 
 
         if 'llama-2' in model_path.lower():
@@ -250,6 +252,8 @@ def load_indiv_model(model_name):
             tokenizer.pad_token = tokenizer.eos_token
 
         lm = HuggingFace(model_name, model, tokenizer)
+    else:
+        raise ValueError(f"Unknown model type or missing model path: {model_name}")
     
     return lm, template
 
