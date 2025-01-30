@@ -93,11 +93,8 @@ def run_tap_for_model(args, target_model_name, attack_llm, evaluator_llm, system
     target_llm = load_target_model(args)
     print(f'Done loading target model: {target_model_name}!', flush=True)
     
-    # Initialize logger for this model - without group_name since it's not supported
-    logger = WandBLogger(args, system_prompt)
-    # Set the group name manually in wandb config after initialization
-    if hasattr(logger, 'run') and logger.run is not None:
-        logger.run.group = f"multi_target_tap_{args.iter_index}"
+    # Initialize logger for this model
+    logger = WandBLogger(args, system_prompt)  # Group is set during initialization
     print('Done initializing logger!', flush=True)
 
     # Initialize conversations

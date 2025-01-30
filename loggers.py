@@ -16,9 +16,10 @@ class WandBLogger:
         """Initialize WandB logger"""
         self.args = args
         
-        # Initialize W&B
+        # Initialize W&B with group parameter
         self.run = wandb.init(
             project="TAP_multi_target",
+            group=f"multi_target_tap_{args.iter_index}",
             config={
                 "attack_model": args.attack_model,
                 "target_model": args.target_model,
